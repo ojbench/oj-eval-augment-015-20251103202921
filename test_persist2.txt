@@ -1,0 +1,4 @@
+2
+insert test 150
+find test
+

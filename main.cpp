@@ -5,130 +5,99 @@
 #include <algorithm>
 #include <cstring>
 #include <map>
+#include <set>
 
 using namespace std;
 
 const string DATA_FILE = "database.dat";
-const int MAX_KEY_LEN = 65;
-
-struct Record {
-    char key[MAX_KEY_LEN];
-    int value;
-    
-    Record() {
-        memset(key, 0, sizeof(key));
-        value = 0;
-    }
-    
-    Record(const string& k, int v) {
-        memset(key, 0, sizeof(key));
-        strncpy(key, k.c_str(), MAX_KEY_LEN - 1);
-        value = v;
-    }
-    
-    bool operator<(const Record& other) const {
-        int cmp = strcmp(key, other.key);
-        if (cmp != 0) return cmp < 0;
-        return value < other.value;
-    }
-    
-    bool operator==(const Record& other) const {
-        return strcmp(key, other.key) == 0 && value == other.value;
-    }
-};
 
 class FileDatabase {
 private:
-    fstream file;
-    
-    void loadAllRecords(vector<Record>& records) {
-        file.seekg(0, ios::end);
-        long fileSize = file.tellg();
-        if (fileSize == 0) return;
-        
-        file.seekg(0, ios::beg);
-        int count = fileSize / sizeof(Record);
-        records.resize(count);
-        file.read((char*)records.data(), fileSize);
-    }
-    
-    void saveAllRecords(const vector<Record>& records) {
-        file.close();
-        file.open(DATA_FILE, ios::out | ios::binary | ios::trunc);
-        if (!records.empty()) {
-            file.write((const char*)records.data(), records.size() * sizeof(Record));
+    map<string, set<int>> data;
+
+    void loadFromFile() {
+        ifstream file(DATA_FILE, ios::binary);
+        if (!file.is_open()) return;
+
+        data.clear();
+        int numKeys;
+        if (!(file.read((char*)&numKeys, sizeof(int)))) return;
+
+        for (int i = 0; i < numKeys; i++) {
+            int keyLen;
+            file.read((char*)&keyLen, sizeof(int));
+
+            string key(keyLen, '\0');
+            file.read(&key[0], keyLen);
+
+            int numValues;
+            file.read((char*)&numValues, sizeof(int));
+
+            set<int> values;
+            for (int j = 0; j < numValues; j++) {
+                int value;
+                file.read((char*)&value, sizeof(int));
+                values.insert(value);
+            }
+
+            data[key] = values;
         }
         file.close();
-        file.open(DATA_FILE, ios::in | ios::out | ios::binary);
     }
-    
+
+    void saveToFile() {
+        ofstream file(DATA_FILE, ios::binary | ios::trunc);
+
+        int numKeys = data.size();
+        file.write((const char*)&numKeys, sizeof(int));
+
+        for (const auto& pair : data) {
+            int keyLen = pair.first.length();
+            file.write((const char*)&keyLen, sizeof(int));
+            file.write(pair.first.c_str(), keyLen);
+
+            int numValues = pair.second.size();
+            file.write((const char*)&numValues, sizeof(int));
+
+            for (int value : pair.second) {
+                file.write((const char*)&value, sizeof(int));
+            }
+        }
+
+        file.close();
+    }
+
 public:
     FileDatabase() {
-        // Try to open existing file
-        file.open(DATA_FILE, ios::in | ios::out | ios::binary);
-        if (!file.is_open()) {
-            // Create new file if it doesn't exist
-            file.open(DATA_FILE, ios::out | ios::binary);
-            file.close();
-            file.open(DATA_FILE, ios::in | ios::out | ios::binary);
-        }
+        loadFromFile();
     }
-    
+
     ~FileDatabase() {
-        if (file.is_open()) {
-            file.close();
-        }
+        saveToFile();
     }
-    
+
     void insert(const string& key, int value) {
-        vector<Record> records;
-        loadAllRecords(records);
-
-        Record newRecord(key, value);
-
-        // Check if record already exists
-        auto it = std::find(records.begin(), records.end(), newRecord);
-        if (it != records.end()) {
-            return; // Duplicate, don't insert
-        }
-
-        records.push_back(newRecord);
-        sort(records.begin(), records.end());
-
-        saveAllRecords(records);
+        data[key].insert(value);
     }
 
     void remove(const string& key, int value) {
-        vector<Record> records;
-        loadAllRecords(records);
-
-        Record targetRecord(key, value);
-
-        auto it = std::find(records.begin(), records.end(), targetRecord);
-        if (it != records.end()) {
-            records.erase(it);
-            saveAllRecords(records);
-        }
-    }
-    
-    void find(const string& key) {
-        vector<Record> records;
-        loadAllRecords(records);
-        
-        vector<int> values;
-        for (const auto& record : records) {
-            if (strcmp(record.key, key.c_str()) == 0) {
-                values.push_back(record.value);
+        if (data.count(key)) {
+            data[key].erase(value);
+            if (data[key].empty()) {
+                data.erase(key);
             }
         }
-        
-        if (values.empty()) {
+    }
+
+    void find(const string& key) {
+        if (data.count(key) == 0 || data[key].empty()) {
             cout << "null" << endl;
         } else {
-            sort(values.begin(), values.end());
-            for (size_t i = 0; i < values.size(); i++) {
-                if (i > 0) cout << " ";
-                cout << values[i];
+            bool first = true;
+            for (int value : data[key]) {
+                if (!first) cout << " ";
+                cout << value;
+                first = false;
             }
             cout << endl;
         }
@@ -138,16 +107,16 @@ public:
 int main() {
     ios::sync_with_stdio(false);
     cin.tie(nullptr);
-    
+
     int n;
     cin >> n;
-    
+
     FileDatabase db;
-    
+
     for (int i = 0; i < n; i++) {
         string command;
         cin >> command;
-        
+
         if (command == "insert") {
             string key;
             int value;
@@ -164,7 +133,7 @@ int main() {
             db.find(key);
         }
     }
-    
+
     return 0;
 }
 

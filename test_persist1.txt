@@ -1,0 +1,5 @@
+3
+insert test 100
+insert test 200
+find test
+
